@@ -47,13 +47,81 @@ export default {
 			});
 		}
 
+		let link = '';
+		if(env.LINK){
+			const links = await ADD(env.LINK);
+			let linkUrl = "";
+			for (let x of links) {
+				if (x.toLowerCase().startsWith('http')) {
+					linkUrl += x + '\n';
+				} else {
+					link += x + '\n';
+				}
+			}
+			// 创建一个AbortController对象，用于控制fetch请求的取消
+			const controller = new AbortController();
+			const urls = await ADD(linkUrl);
+			const timeout = setTimeout(() => {
+				controller.abort(); // 取消所有请求
+			}, 2000); // 2秒后触发
+
+			try {
+				const responses = await Promise.allSettled(urls.map(url =>
+					fetch(url, {
+						method: 'get',
+						headers: {
+							'Accept': 'text/html,application/xhtml+xml,application/xml;',
+							'User-Agent': `${UA}`
+						},
+						signal: controller.signal // 将AbortController的信号量添加到fetch请求中，以便于需要时可以取消请求
+					}).then(response => {
+						if (response.ok) {
+							return response.text().then(content => {
+								// 这里可以顺便做内容检查
+								if (!content.includes('://')) {
+									content = base64Decode(content);
+								} else {
+									//content = decodeURIComponent(content);
+									if (content.includes('\r')){
+										content = content.replace(/\r/g, '');
+									}
+								}
+								return content; // 保证链式调用中的下一个then可以接收到文本内容
+								//console.log(content);
+							});
+						} else {
+							return ""; // 如果response.ok为false，返回空字符串
+						}
+					
+					})
+				));	
+
+				for (const response of responses) {
+					if (response.status === 'fulfilled') {
+						const content = await response.value;
+						link += content + '\n';
+					}
+				}
+
+			} catch (error) {
+				//console.error(error);
+			} finally {
+				// 无论成功或失败，最后都清除设置的超时定时器
+				clearTimeout(timeout);
+			}
+
+			console.log(link);
+		}
+
 		let siteshy2 = [
 			{ url: 'https://raw.githubusercontent.com/Alvin9999/pac2/master/hysteria2/config.json', type: "hysteria2" },
-			{ url: 'https://raw.githubusercontent.com/Alvin9999/pac2/master/hysteria2/1/config.json',type: "hysteria2" },
-			{ url: 'https://raw.githubusercontent.com/Alvin9999/pac2/master/hysteria2/2/config.json',type: "hysteria2"},
-			{ url: 'https://raw.githubusercontent.com/Alvin9999/pac2/master/hysteria2/13/config.json',type: "hysteria2"},
-			{ url: 'https://gitlab.com/free9999/ipupdate/-/raw/master/hysteria2/config.json',type: "hysteria2"},
-			{ url: 'https://gitlab.com/free9999/ipupdate/-/raw/master/hysteria2/2/config.json',type: "hysteria2"},
+                        { url: 'https://raw.githubusercontent.com/Alvin9999/pac2/master/hysteria2/1/config.json',type: "hysteria2" },
+                        { url: 'https://raw.githubusercontent.com/Alvin9999/pac2/master/hysteria2/2/config.json',type: "hysteria2"},
+                        { url: 'https://raw.githubusercontent.com/Alvin9999/pac2/master/hysteria2/13/config.json',type: "hysteria2"},
+                        { url: 'https://gitlab.com/free9999/ipupdate/-/raw/master/hysteria2/config.json',type: "hysteria2"},
+                        { url: 'https://gitlab.com/free9999/ipupdate/-/raw/master/hysteria2/2/config.json',type: "hysteria2"},
+                        { url: 'https://fastly.jsdelivr.net/gh/Alvin9999/pac2@latest/hysteria2/2/config.json', type: "hysteria2" },
+                        { url: 'https://fastly.jsdelivr.net/gh/Alvin9999/pac2@latest/hysteria2/config.json', type: "hysteria2" },
 		];
 
 		let siteshy = [
@@ -63,12 +131,15 @@ export default {
 			{ url: "https://raw.githubusercontent.com/Alvin9999/pac2/master/hysteria/13/config.json", type: "hysteria" },
 			{ url: "https://gitlab.com/free9999/ipupdate/-/raw/master/hysteria/config.json", type: "hysteria" },
 			{ url: "https://gitlab.com/free9999/ipupdate/-/raw/master/hysteria/2/config.json", type: "hysteria" },
+			{ url: "https://fastly.jsdelivr.net/gh/Alvin9999/pac2@latest/hysteria/config.json", type: "hysteria" },
+			{ url: "https://fastly.jsdelivr.net/gh/Alvin9999/pac2@latest/hysteria/2/config.json", type: "hysteria" },
 		];
 
 		let sitessb = [
 			{ url: "https://raw.githubusercontent.com/Alvin9999/pac2/master/singbox/config.json", type: "hysteria" },
 			{ url: "https://raw.githubusercontent.com/Alvin9999/pac2/master/singbox/1/config.json", type: "hysteria" },
 			{ url: "https://gitlab.com/free9999/ipupdate/-/raw/master/singbox/config.json",type: "hysteria"},
+			{ url: "https://fastly.jsdelivr.net/gh/Alvin9999/pac2@latest/singbox/config.json", type: "singbox" },
 		];
 
 		// 使用 Promise.all() 并发请求所有站点
@@ -119,7 +190,10 @@ export default {
 
 		// 合并所有响应结果
 		let responses = [].concat(hysteria2Responses, hysteriaResponses, singboxResponses);
-
+		if (env.LINK && link != ''){
+			responses = [].concat(hysteria2Responses, hysteriaResponses, singboxResponses , link.split('\n'));
+		}
+		
 		// 去重
 		const 所有节点信息 = [...new Set(responses)];//removeDuplicates(responses);
 		let 订阅转换URL = 所有节点信息.join('|')
@@ -320,4 +394,10 @@ async function ADD(envadd) {
 	const add = addtext.split(',');
 	//console.log(add);
 	return add ;
+}
+
+function base64Decode(str) {
+	const bytes = new Uint8Array(atob(str).split('').map(c => c.charCodeAt(0)));
+	const decoder = new TextDecoder('utf-8');
+	return decoder.decode(bytes);
 }
